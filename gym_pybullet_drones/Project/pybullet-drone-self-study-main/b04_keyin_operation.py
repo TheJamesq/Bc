@@ -16,7 +16,7 @@ from util.data_logger import DroneDataLogger
 if __name__ == "__main__":
 
     # Initialize the PyBullet simulation environment.
-    init_xyzx = np.array([[.5, .5, 1], [-.5,  0, .7]])
+    init_xyzx = np.array([[0.3, .5, 1], [-.4, .5, 1]])
     aggr_phy_steps = 5
     num_drone = 2        # Step the simulation
     urdf_file = './assets/drone_x_01.urdf'
@@ -118,8 +118,8 @@ if __name__ == "__main__":
             #cv2.circle(rgbImg, (centerX, centerY), 5, (255, 0, 0), -1) #segImg_color
 
             contours, _ = cv2.findContours(segImg_8U, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-
+            scale_factor = 30  # Nastavte podle potřeby
+            current_speed = kis[target_drone_id].vel
             # Projít všemi nalezenými konturami
             for contour in contours:
                 # Vypočítat obvod kontury
@@ -133,11 +133,17 @@ if __name__ == "__main__":
                         cX = int(M["m10"] / M["m00"])
                         cY = int(M["m01"] / M["m00"])
 
+                        end_point_x = int(cX)
+                        end_point_y = int(cY - current_speed[2] * scale_factor)  # minus, protože v obrazovém formátu je směr nahoru negativní
+
+                        # Vykreslení šipky pro vertikální rychlost
+                        cv2.arrowedLine(rgbImg, (cX, cY), (end_point_x, end_point_y), (255, 255, 0), 2, tipLength=0.2)
+
                         # Nakreslit čáru mezi středovým bodem kamery a středovým bodem kontury (žlutou barvou)
                         cv2.line(rgbImg, (centerX, centerY), (cX, cY), (0, 255, 255), 2) #segImg_color
 
                         # Nakreslit středový bod kontury na obraz (červenou tečkou)
-                        cv2.circle(rgbImg, (cX, cY), 5, (0, 0, 255), -1) #segImg_color
+                        cv2.circle(rgbImg, (cX, cY), 2, (0, 0, 255), -1) #segImg_color
 
                         # Vypočítat obdélník kolem kontury
                         x, y, w, h = cv2.boundingRect(contour)
@@ -151,16 +157,17 @@ if __name__ == "__main__":
 
             ctrl_target = key_ctrl.get_ctrl_target()
 
+
             for j in range(num_drone):
                 ki = kis[j]
-                if j != target_drone_id:
+                '''if j != target_drone_id:
                     ctrl_target = DroneControlTarget(
                         pos=np.array(init_xyzx[j]),
                         vel=np.zeros(3),
                         rpy=np.zeros(3),
-                    )
+                    )'''
                 if j == follower_id:
-                    target_distance = 0.5
+                    target_distance = 0.35
 
 
                     # Konstanty PI regulátoru
@@ -170,9 +177,13 @@ if __name__ == "__main__":
                     Kp_height =  1.26# 0.0032 for video
                     Ki_height =  0.95#0.0045 for video
 
-                    Kp_distance_x = 0.20
-                    Ki_distance_x = 0.078
-                    Kd_distance_x  = 0.005
+                    Kp_distance_x = 0.55
+                    Ki_distance_x = 0.082
+                    Kd_distance_x  = 0.01
+
+                    Kp_distance_y = 0.55
+                    Ki_distance_y = 0.082
+                    Kd_distance_y  = 0.01
 
                     # Inicializace akumulovaného chybového signálu
                     accumulated_error_yaw = 0
@@ -215,7 +226,7 @@ if __name__ == "__main__":
                         #--------------------- height control
 
                         # Výpočet chybového signálu (rozsdíl ve středových bodech)
-                        error_height =  kis[target_drone_id].pos[2] - kis[follower_id].pos[2]
+                        error_height =  (kis[target_drone_id].pos[2]) - kis[follower_id].pos[2]
 
                         # Akumulace chybového signálu
                         accumulated_error_height += error_height
@@ -228,7 +239,7 @@ if __name__ == "__main__":
 
 
                         #------------------- x distance
-                        current_distance_x = np.linalg.norm(kis[target_drone_id].pos[0] - kis[follower_id].pos[0])
+                        current_distance_x = (kis[target_drone_id].pos[0] - kis[follower_id].pos[0])
                         error_distance_x =  current_distance_x - target_distance
 
                         # Akumulace chybového signálu
@@ -246,8 +257,8 @@ if __name__ == "__main__":
 
 
                         # ------------------- y distance
-                        current_distance_y = np.linalg.norm(kis[target_drone_id].pos[1] - kis[follower_id].pos[1])
-                        error_distance_y =   target_distance - current_distance_y
+                        current_distance_y = (kis[target_drone_id].pos[1] - kis[follower_id].pos[1])
+                        error_distance_y =  current_distance_y - target_distance
 
                         # Akumulace chybového signálu
                         accumulated_error_distance_y += error_distance_y
@@ -256,11 +267,12 @@ if __name__ == "__main__":
                         previous_error_distance_y = error_distance_y
 
                         # Výpočet akce pomocí PID regulátoru
-                        delta_distance_y = Kp_distance_x * error_distance_y + Ki_distance_x * accumulated_error_distance_y + Kd_distance_x * derivative_distance_y
+                        delta_distance_y = Kp_distance_y * error_distance_y + Ki_distance_y * accumulated_error_distance_y + Kd_distance_y * derivative_distance_y
 
                         updated_distance_y = ki.pos[1] + delta_distance_y
 
-                        print(delta_distance_y, delta_distance_x)
+
+                        print(delta_distance_x, delta_distance_y)
 
                         # Nastavení nového úhlu natočení (yaw)
                         ctrl_target = DroneControlTarget(
@@ -268,7 +280,6 @@ if __name__ == "__main__":
                             vel=np.array([0,0,0]),
                             rpy=np.array([0, 0, current_yaw])  # Aktualizovaný yaw
                         )
-
                     else:
                         # Pokud "leader" není vidět, můžete například zůstat na aktuálním místě
                         ctrl_target = DroneControlTarget(
@@ -278,11 +289,15 @@ if __name__ == "__main__":
                         )
 
 
+
+
+
                 action[j], _, _ = ctrls[j].compute_control_from_kinematics(
                     control_timestep=ctrl_event_n_steps * blt_env.get_sim_time_step(),
                     kin_state=ki,
                     ctrl_target=ctrl_target,
                 )
+
 
         # Log the simulation (optional).
         rpms = blt_env.get_last_rpm_values()
